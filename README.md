@@ -1,43 +1,222 @@
-# BankGuard Dashboard and Local Replication Lab
+# 🛡️ BankGuard – Database Administration Dashboard & Replication Lab
 
-The Streamlit dashboard reads the supplied PostgreSQL schema and MongoDB replica set, and can monitor a local Docker lab. The Docker Compose lab creates a PostgreSQL primary with two physical streaming replicas, plus a MongoDB sharded cluster with three shards. Its `BankGuard.shard_demo` collection is seeded with 2,000 records per shard, evenly partitioned by `shard_group`.
+**BankGuard** is a database administration and monitoring platform built using Python, Streamlit, PostgreSQL, MongoDB, and Docker. It provides a unified interface for database monitoring, replication health analysis, query optimization, sharding visualization, transaction management concepts, and database security experiments.
 
-## Start the Docker lab
+The project combines a monitoring dashboard with a local database infrastructure lab to demonstrate practical Database Administration (DBA) concepts.
 
-Docker Desktop must be running. From this project folder:
+## 🚀 Key Features
 
-```powershell
-docker compose up -d
-docker compose ps
+- **Slow Queries:** Identify and analyze expensive PostgreSQL queries using query statistics.
+- **Replication Health:** Monitor PostgreSQL streaming replication and MongoDB replica-set health.
+- **Shard Balance:** Visualize MongoDB sharding and document distribution across shards.
+- **Index Advisor:** Explore index recommendations and query optimization.
+- **Lab Execution:** Demonstrate ACID properties, transaction isolation levels, concurrency, and SQL concepts.
+- **Fraud & Audit:** Explore database audit and fraud-monitoring concepts.
+- **Docker Replication Lab:** Run a local PostgreSQL primary with two replicas and a MongoDB sharded cluster.
+
+## 🏗️ Technology Stack
+
+| Component | Technology |
+|---|---|
+| Frontend / Dashboard | Streamlit |
+| Programming Language | Python |
+| Relational Database | PostgreSQL 18 |
+| NoSQL Database | MongoDB 8 |
+| Containerization | Docker & Docker Compose |
+| Data Processing | Pandas |
+| Database Connectivity | PostgreSQL and MongoDB drivers |
+
+## 🗂️ Project Structure
+
+```text
+BankGuard/
+│
+├── dashboard.py
+├── requirements.txt
+├── docker-compose.yml
+├── .env.example
+├── .gitignore
+│
+├── bankguard/
+│   ├── load_test.py
+│   ├── mongo_queries.py
+│   └── seed_mongo.py
+│
+├── docker/
+│   └── postgres/
+│       ├── 01_replication_user.sh
+│       └── 20_seed_bankguard.sql
+│
+├── sql/
+│   ├── 01_foundation.sql
+│   ├── 02_queries_and_security.sql
+│   └── 03_query_optimization.sql
+│
+└── reference_material/
+    └── BankGuard_SQL_Files/
+        ├── Database and Tables
+        ├── DCL and TCL Commands
+        ├── Joins and Window Functions
+        ├── Query Optimization
+        ├── Transaction Isolation
+        └── Deadlock Experiments
 ```
 
-First startup pulls the official Postgres 18 and MongoDB 8.0.12 images, initializes the databases and replica/shard topology, and may take a few minutes. PostgreSQL ports are primary `5433`, replica1 `5434`, and replica2 `5435`. MongoDB mongos is `27020`; direct shard metrics use `27101`, `27102`, and `27103`. The existing MongoDB replica set from the supplied notes remains separate on `27017`–`27019`.
+## ⚙️ Prerequisites
 
-The PostgreSQL Docker primary is initialized from the schema in `reference_material/BankGuard_SQL_Files/01_Database_and_Tables.sql` and seeded with 500 sample rows in each main table. Its default local development passwords are `bankguard_primary_dev` and `bankguard_repl_dev`; set `PG_PRIMARY_PASSWORD` and `PG_REPL_PASSWORD` in `.env` before first startup if you want different local credentials. These ports bind to localhost. Do not expose the development defaults to a network. Replica1 applies WAL after 200 ms and replica2 after 700 ms, keeping both inside the dashboard's healthy lag threshold while producing live heartbeat samples.
+Install the following before running the project:
 
-To stop the containers while preserving their data:
+- Python 3.10 or later
+- Docker Desktop
+- Git
+- VS Code (recommended)
+- PostgreSQL and MongoDB connectivity for monitoring external databases
 
-```powershell
-docker compose down
+## 📥 Installation
+
+**1. Clone the repository**
+
+```bash
+git clone https://github.com/Joshi-574/DBA-Project.git
+cd DBA-Project
 ```
 
-To recreate the lab from a clean state, volumes must be deleted explicitly with `docker compose down -v`; that deletes the Docker lab's stored database data.
+**2. Create a virtual environment**
 
-## Dashboard
+Windows:
 
-Install dependencies and run:
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
+```
 
-```powershell
+**3. Install dependencies**
+
+```bash
 python -m pip install -r requirements.txt
+```
+
+**4. Configure environment variables**
+
+```cmd
+copy .env.example .env
+```
+
+Update `.env` with your local PostgreSQL and MongoDB connection settings. Never commit real credentials.
+
+**5. Start the dashboard**
+
+```bash
 streamlit run dashboard.py
 ```
 
-Open this project folder in VS Code: `C:\Users\mdsan\Desktop\BankGuard_SQL_Files`. Select your Python 3 interpreter, then run the commands above in the VS Code PowerShell terminal. The `.env` file in this folder supplies your local connection settings; do not replace it with `.env.example` unless you intentionally want to recreate the settings.
+Open the local URL displayed in the terminal.
 
-The app has PostgreSQL, MongoDB, and Docker Connect/Disable controls. The **Replication Health** page polls PostgreSQL lag/write lag/state and MongoDB replica-set member health every second. A one-row heartbeat produces fresh WAL for the live lag chart. Set `PG_REPLICATION_DSN=postgresql://postgres:bankguard_primary_dev@127.0.0.1:5433/BankGuard` in `.env` to monitor the Docker PostgreSQL primary. Set the MongoDB values from `.env.example` to view the sharded cluster on **Shard Balance** while retaining `MONGO_URI` for the existing `rs0` replica set. **Lab Execution** contains simulation-only ACID, isolation, concurrency, and SQL learning tabs; lab buttons do not change database records.
+## 🐳 Docker Replication Lab
 
-The **Slow Queries** page ranks live `pg_stat_statements` by total execution time when the extension is enabled. The **Project Files** page browses the supplied SQL and benchmark files; saved pgbench results are identified as benchmark data, not live dashboard measurements.
+Make sure Docker Desktop is running.
 
-## Sharding behavior
+Start the infrastructure:
 
-The sharded collection has exactly 6,000 sample documents with 2,000 assigned to each shard. Sharding partitions documents: each record lives on one shard, while replication copies each shard's records to that shard's replica members. The Compose cluster uses one MongoDB process per shard for a lightweight local demonstration, plus one config-server process. It is a learning setup, not a highly available production cluster.
+```bash
+docker compose up -d
+```
+
+Check container status:
+
+```bash
+docker compose ps
+```
+
+The local Docker lab provides:
+
+### PostgreSQL Streaming Replication
+
+- One PostgreSQL primary
+- Two physical streaming replicas
+- WAL-based replication monitoring
+- Replica lag and heartbeat observation
+
+### MongoDB Sharded Cluster
+
+- One mongos router
+- One config-server process
+- Three shard processes
+- 6,000 demonstration documents
+- 2,000 documents assigned to each shard
+
+**Local ports:**
+
+| Service | Port |
+|---|---:|
+| PostgreSQL Primary | 5433 |
+| PostgreSQL Replica 1 | 5434 |
+| PostgreSQL Replica 2 | 5435 |
+| MongoDB mongos | 27020 |
+| MongoDB Shard 1 | 27101 |
+| MongoDB Shard 2 | 27102 |
+| MongoDB Shard 3 | 27103 |
+
+Stop containers:
+
+```bash
+docker compose down
+```
+
+To remove the lab's stored database volumes as well:
+
+```bash
+docker compose down -v
+```
+
+**Warning:** The second command permanently removes the Docker lab's stored database data.
+
+## 🧪 Database Concepts Demonstrated
+
+- ACID properties
+- Transaction isolation levels
+- Concurrent transactions
+- Deadlock experiments
+- SQL joins and window functions
+- Database access control
+- Query optimization
+- PostgreSQL WAL and streaming replication
+- MongoDB replica sets and sharding
+
+## 📊 Architecture Overview
+
+```text
+              BANKGUARD DASHBOARD
+                  Streamlit
+                      |
+          +-----------+-----------+
+          |                       |
+      PostgreSQL                MongoDB
+          |                       |
+     Primary Node              mongos Router
+       /      \                /     |     \
+   Replica1 Replica2         Shard1 Shard2 Shard3
+          |                       |
+     WAL Monitoring          Shard Distribution
+          |                       |
+          +-----------+-----------+
+                      |
+               DBA Monitoring
+```
+
+## ⚠️ Project Limitations
+
+- The Docker infrastructure is intended for local learning and demonstration.
+- The one-process-per-shard setup is not a highly available production cluster.
+- Dashboard monitoring depends on valid database connections and enabled database extensions.
+- Lab Execution simulations do not modify actual database records.
+
+## 🎯 Project Objective
+
+The main objective of BankGuard is to demonstrate practical Database Administration skills through a unified dashboard and hands-on database infrastructure, combining relational databases, NoSQL databases, replication, sharding, query optimization, and transaction management.
+
+---
+
+**Developed as a Database Administration project.**
+
+GitHub: https://github.com/Joshi-574/DBA-Project
