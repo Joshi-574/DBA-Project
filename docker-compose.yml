@@ -1,0 +1,190 @@
+services:
+  pg-primary:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: BankGuard
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_PRIMARY_PASSWORD:-bankguard_primary_dev}
+      PG_REPL_PASSWORD: ${PG_REPL_PASSWORD:-bankguard_repl_dev}
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "wal_level=replica", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10", "-c", "wal_keep_size=512MB", "-c", "password_encryption=scram-sha-256"]
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg_primary_data:/var/lib/postgresql
+      - ./docker/postgres/01_replication_user.sh:/docker-entrypoint-initdb.d/01_replication_user.sh:ro
+      - ./reference_material/BankGuard_SQL_Files/01_Database_and_Tables.sql:/docker-entrypoint-initdb.d/10_schema.sql:ro
+      - ./docker/postgres/20_seed_bankguard.sql:/docker-entrypoint-initdb.d/20_seed_bankguard.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d BankGuard"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  pg-replica1:
+    image: postgres:18
+    environment:
+      PG_REPL_PASSWORD: ${PG_REPL_PASSWORD:-bankguard_repl_dev}
+      REPLICA_NAME: pg-replica1
+      REPLICA_SLOT: pg_replica1_slot
+      PGDATA: /var/lib/postgresql/data
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        mkdir -p "$$PGDATA"
+        chown -R postgres:postgres "$$PGDATA"
+        chmod 700 "$$PGDATA"
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          until pg_isready -h pg-primary -p 5432 -U postgres -d BankGuard; do sleep 2; done
+          gosu postgres env PGPASSWORD="$$PG_REPL_PASSWORD" pg_basebackup -h pg-primary -p 5432 -D "$$PGDATA" -U replicator -Fp -Xs -P -R -S "$$REPLICA_SLOT"
+          printf 'pg-primary:5432:replication:replicator:%s\n' "$$PG_REPL_PASSWORD" > "$$PGDATA/.pgpass"
+          chmod 600 "$$PGDATA/.pgpass"
+          printf "primary_conninfo = 'host=pg-primary port=5432 user=replicator passfile=%s/.pgpass application_name=%s'\n" "$$PGDATA" "$$REPLICA_NAME" >> "$$PGDATA/postgresql.auto.conf"
+          chown postgres:postgres "$$PGDATA/.pgpass" "$$PGDATA/postgresql.auto.conf"
+          chmod 700 "$$PGDATA"
+        fi
+        exec gosu postgres postgres -c hot_standby=on -c port=5432 -c recovery_min_apply_delay=200ms -c "primary_conninfo=host=pg-primary port=5432 user=replicator passfile=$$PGDATA/.pgpass application_name=pg-replica1"
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pg_replica1_data:/var/lib/postgresql/data
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d BankGuard"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  pg-replica2:
+    image: postgres:18
+    environment:
+      PG_REPL_PASSWORD: ${PG_REPL_PASSWORD:-bankguard_repl_dev}
+      REPLICA_NAME: pg-replica2
+      REPLICA_SLOT: pg_replica2_slot
+      PGDATA: /var/lib/postgresql/data
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        mkdir -p "$$PGDATA"
+        chown -R postgres:postgres "$$PGDATA"
+        chmod 700 "$$PGDATA"
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          until pg_isready -h pg-primary -p 5432 -U postgres -d BankGuard; do sleep 2; done
+          gosu postgres env PGPASSWORD="$$PG_REPL_PASSWORD" pg_basebackup -h pg-primary -p 5432 -D "$$PGDATA" -U replicator -Fp -Xs -P -R -S "$$REPLICA_SLOT"
+          printf 'pg-primary:5432:replication:replicator:%s\n' "$$PG_REPL_PASSWORD" > "$$PGDATA/.pgpass"
+          chmod 600 "$$PGDATA/.pgpass"
+          printf "primary_conninfo = 'host=pg-primary port=5432 user=replicator passfile=%s/.pgpass application_name=%s'\n" "$$PGDATA" "$$REPLICA_NAME" >> "$$PGDATA/postgresql.auto.conf"
+          chown postgres:postgres "$$PGDATA/.pgpass" "$$PGDATA/postgresql.auto.conf"
+          chmod 700 "$$PGDATA"
+        fi
+        exec gosu postgres postgres -c hot_standby=on -c port=5432 -c recovery_min_apply_delay=700ms -c "primary_conninfo=host=pg-primary port=5432 user=replicator passfile=$$PGDATA/.pgpass application_name=pg-replica2"
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - pg_replica2_data:/var/lib/postgresql/data
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d BankGuard"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  pg-heartbeat:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: ${PG_PRIMARY_PASSWORD:-bankguard_primary_dev}
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        until pg_isready -h pg-primary -p 5432 -U postgres -d BankGuard; do sleep 2; done
+        export PGPASSWORD="$$POSTGRES_PASSWORD"
+        psql -h pg-primary -U postgres -d BankGuard -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS public.replication_heartbeat (id smallint PRIMARY KEY CHECK (id=1), emitted_at timestamptz NOT NULL); INSERT INTO public.replication_heartbeat(id,emitted_at) VALUES (1,clock_timestamp()) ON CONFLICT (id) DO UPDATE SET emitted_at=EXCLUDED.emitted_at;"
+        while true; do
+          psql -h pg-primary -U postgres -d BankGuard -v ON_ERROR_STOP=1 -c "INSERT INTO public.replication_heartbeat(id,emitted_at) VALUES (1,clock_timestamp()) ON CONFLICT (id) DO UPDATE SET emitted_at=EXCLUDED.emitted_at;" >/dev/null
+          sleep 0.7
+        done
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo-config:
+    image: mongo:8.0.12
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--bind_ip_all", "--port", "27017"]
+    volumes: ["mongo_config_data:/data/configdb"]
+    restart: unless-stopped
+
+  mongo-shard1:
+    image: mongo:8.0.12
+    command: ["mongod", "--shardsvr", "--replSet", "shard1rs", "--bind_ip_all", "--port", "27017"]
+    ports: ["127.0.0.1:27101:27017"]
+    volumes: ["mongo_shard1_data:/data/db"]
+    restart: unless-stopped
+
+  mongo-shard2:
+    image: mongo:8.0.12
+    command: ["mongod", "--shardsvr", "--replSet", "shard2rs", "--bind_ip_all", "--port", "27017"]
+    ports: ["127.0.0.1:27102:27017"]
+    volumes: ["mongo_shard2_data:/data/db"]
+    restart: unless-stopped
+
+  mongo-shard3:
+    image: mongo:8.0.12
+    command: ["mongod", "--shardsvr", "--replSet", "shard3rs", "--bind_ip_all", "--port", "27017"]
+    ports: ["127.0.0.1:27103:27017"]
+    volumes: ["mongo_shard3_data:/data/db"]
+    restart: unless-stopped
+
+  mongo-router:
+    image: mongo:8.0.12
+    command: ["mongos", "--configdb", "cfgRS/mongo-config:27017", "--bind_ip_all", "--port", "27017"]
+    ports: ["127.0.0.1:27020:27017"]
+    depends_on: [mongo-config, mongo-shard1, mongo-shard2, mongo-shard3]
+    restart: unless-stopped
+
+  mongo-shard-init:
+    image: mongo:8.0.12
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        for host in mongo-config mongo-shard1 mongo-shard2 mongo-shard3; do
+          until mongosh --host "$$host" --quiet --eval 'db.adminCommand("ping").ok' >/dev/null 2>&1; do sleep 2; done
+        done
+        mongosh --host mongo-config --quiet --eval 'rs.initiate({_id:"cfgRS",configsvr:true,members:[{_id:0,host:"mongo-config:27017"}]})' || true
+        mongosh --host mongo-shard1 --quiet --eval 'rs.initiate({_id:"shard1rs",members:[{_id:0,host:"mongo-shard1:27017"}]})' || true
+        mongosh --host mongo-shard2 --quiet --eval 'rs.initiate({_id:"shard2rs",members:[{_id:0,host:"mongo-shard2:27017"}]})' || true
+        mongosh --host mongo-shard3 --quiet --eval 'rs.initiate({_id:"shard3rs",members:[{_id:0,host:"mongo-shard3:27017"}]})' || true
+        for host in mongo-config mongo-shard1 mongo-shard2 mongo-shard3; do
+          until mongosh --host "$$host" --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -q true; do sleep 2; done
+        done
+        until mongosh --host mongo-router --quiet --eval 'db.adminCommand("ping").ok' >/dev/null 2>&1; do sleep 2; done
+        mongosh --host mongo-router --quiet --eval '
+          const admin=db.getSiblingDB("admin");
+          const configured=admin.runCommand({listShards:1}).shards.map(s=>s._id);
+          for (const [rs,host] of [["shard1rs","mongo-shard1:27017"],["shard2rs","mongo-shard2:27017"],["shard3rs","mongo-shard3:27017"]]) if (!configured.includes(rs)) sh.addShard(rs+"/"+host);
+          sh.enableSharding("BankGuard");
+          const ns="BankGuard.shard_demo";
+          const cfg=db.getSiblingDB("config");
+          if (!cfg.collections.findOne({_id:ns})) { db.getSiblingDB("BankGuard").shard_demo.createIndex({shard_group:1}); sh.shardCollection(ns,{shard_group:1}); }
+          if (cfg.chunks.countDocuments({ns}) < 3) { sh.splitAt(ns,{shard_group:1}); sh.splitAt(ns,{shard_group:2}); sh.moveChunk(ns,{shard_group:1},"shard2rs"); sh.moveChunk(ns,{shard_group:2},"shard3rs"); }
+          const coll=db.getSiblingDB("BankGuard").shard_demo;
+          if (coll.estimatedDocumentCount()===0) { let batch=[]; for (let g=0;g<3;g++) for (let i=1;i<=2000;i++) batch.push({shard_group:g,doc_id:i,event_type:["login","transfer","payment"][i%3],amount:Number(((i*13.37)%5000).toFixed(2)),created_at:new Date()}); for (let i=0;i<batch.length;i+=1000) coll.insertMany(batch.slice(i,i+1000)); }
+          printjson({sharded:true,documents:coll.estimatedDocumentCount(),shards:admin.runCommand({listShards:1}).shards.map(s=>s._id)});
+        '
+    depends_on: [mongo-router]
+    restart: "no"
+
+volumes:
+  pg_primary_data:
+  pg_replica1_data:
+  pg_replica2_data:
+  mongo_config_data:
+  mongo_shard1_data:
+  mongo_shard2_data:
+  mongo_shard3_data:

@@ -1,0 +1,25 @@
+BANKGUARD PGBENCH CONCURRENCY RESULTS
+
+Environment:
+PostgreSQL 18.6; separate database bankguard_benchmark; scale factor 10;
+10 concurrent clients; 2 threads; built-in pgbench TPC-B-like workload.
+
+Commands (run from Windows Command Prompt; pgbench is already installed):
+50,000:    pgbench -c 10 -j 2 -t 5000   -U postgres -h localhost -p 5432 bankguard_benchmark
+100,000:   pgbench -c 10 -j 2 -t 10000  -U postgres -h localhost -p 5432 bankguard_benchmark
+250,000:   pgbench -c 10 -j 2 -t 25000  -U postgres -h localhost -p 5432 bankguard_benchmark
+500,000:   pgbench -c 10 -j 2 -t 50000  -U postgres -h localhost -p 5432 bankguard_benchmark
+750,000:   pgbench -c 10 -j 2 -t 75000  -U postgres -h localhost -p 5432 bankguard_benchmark
+1,000,000: pgbench -c 10 -j 2 -t 100000 -U postgres -h localhost -p 5432 bankguard_benchmark
+
+Transactions | Avg latency ms | TPS      | Failed
+50,000       | 1.777          | 5626.108 | 0
+100,000      | 1.592          | 6283.362 | 0
+250,000      | 1.666          | 6003.165 | 0
+500,000      | 1.634          | 6120.175 | 0
+750,000      | 1.644          | 6082.712 | 0
+1,000,000    | 1.314          | 7611.272 | 0
+
+All six runs completed with zero failures. Ten clients were concurrent; this does not
+mean one million simultaneous clients. pgbench's -t is transactions per client.
+The workload is the built-in TPC-B-like benchmark, not BankGuard-specific SQL.

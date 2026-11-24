@@ -1,0 +1,22 @@
+BANKGUARD MONGODB NOTES
+
+MongoDB Server 8.0.12; Mongosh 2.14.2; replica set name rs0.
+
+Members:
+127.0.0.1:27017 PRIMARY
+127.0.0.1:27018 SECONDARY
+127.0.0.1:27019 SECONDARY
+
+Compass connection string:
+mongodb://127.0.0.1:27017,127.0.0.1:27018,127.0.0.1:27019/?replicaSet=rs0
+
+Database: BankGuard
+Collections (exact names):
+audit_logs
+fraud_events
+login_history
+
+Node 2 and node 3 were started manually in separate Command Prompt windows.
+Keep those windows open while using the replica set. They bind to localhost only.
+Sample documents were inserted into each collection and verified on secondary nodes.
+The complete original insertion commands were not retained verbatim.
